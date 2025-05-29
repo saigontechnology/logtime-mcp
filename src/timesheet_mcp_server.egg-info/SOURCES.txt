@@ -1,0 +1,10 @@
+README.md
+pyproject.toml
+src/timesheet_mcp/__init__.py
+src/timesheet_mcp/main.py
+src/timesheet_mcp_server.egg-info/PKG-INFO
+src/timesheet_mcp_server.egg-info/SOURCES.txt
+src/timesheet_mcp_server.egg-info/dependency_links.txt
+src/timesheet_mcp_server.egg-info/entry_points.txt
+src/timesheet_mcp_server.egg-info/requires.txt
+src/timesheet_mcp_server.egg-info/top_level.txt

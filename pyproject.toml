@@ -1,0 +1,18 @@
+[project]
+name = "timesheet-mcp-server"
+version = "0.1.0"
+description = "MCP server for logging time to Insider API"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = ["mcp", "requests>=2.32.0", "pydantic>=2.0.0"]
+
+[build-system]
+requires = ["setuptools>=42", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.uv]
+dev-dependencies = ["pyright>=1.1.389"]
+
+[project.scripts]
+timesheet_mcp = "timesheet_mcp:main"
