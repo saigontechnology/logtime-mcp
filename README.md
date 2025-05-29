@@ -1,6 +1,6 @@
 # Timesheet MCP Server
 
-An MCP (Model Code Processing) server for logging time to the Insider system.
+An MCP (Model Context Protocol) server for logging time to the Insider system.
 
 ## Features
 
@@ -54,6 +54,7 @@ Lists all projects available to the user.
 ```
 
 Response:
+
 ```json
 {
   "projects": [
@@ -76,7 +77,7 @@ Logs time to a specific project.
   "arguments": {
     "projectId": 10522,
     "hours": 4,
-    "logDate": "2025-05-29",
+    "logDates": ["2025-05-29"],
     "hourRate": 1.5,
     "activity": 1,
     "comment": "Working on feature X"
@@ -85,20 +86,22 @@ Logs time to a specific project.
 ```
 
 Parameters:
+
 - `projectId` (required): Project ID from list_projects
 - `hours` (required): Number of hours to log (between 0.5 and 24)
-- `logDate` (required): Date to log time for in YYYY-MM-DD format
-- `hourRate` (optional, default: 1.0): Hour rate (1 for normal, 1.5 for OT weekday, 2 for OT weekend, 3 for OT holiday)
+- `logDate` (required): List of Dates to log time for in YYYY-MM-DD format
+- `hourRate` (optional, default: 1.0): Hour rate (1 for normal, 1.5 for OT
+  weekday, 2 for OT weekend, 3 for OT holiday)
 - `activity` (optional, default: 1): Activity type (1 for Code, 2 for Test)
 - `comment` (optional): Comment for the time entry
 
 Response:
+
 ```json
 {
   "success": true,
   "message": "Time logged successfully",
   "details": {
-    "id": 12345,
     "status": "success"
   }
 }
@@ -113,3 +116,4 @@ python -m unittest discover tests
 ## License
 
 MIT
+
