@@ -137,6 +137,7 @@ class InsiderAPIService:
     def log_time(self, log_time_input: LogTimeInput) -> Dict[str, Any]:
         """Log time for a project"""
         endpoint = f"{self.base_url}/timesheet/add"
+        result = []
 
         for date in log_time_input.logDates:
             payload = {
@@ -159,7 +160,9 @@ class InsiderAPIService:
                 )
                 response.raise_for_status()
 
-                return {"status": "done"}
+                result.append(
+                    f"Project: {log_time_input.projectId}, date: {date}, status: done"
+                )
 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Failed to log time: {e}")
@@ -173,6 +176,7 @@ class InsiderAPIService:
                         error_detail = e.response.text
 
                 raise RuntimeError(f"Failed to log time: {error_detail}")
+        return {"result": result}
 
 
 # --- MCP Server Implementation ---
@@ -181,9 +185,9 @@ async def serve() -> None:
     server = Server("mcp-timesheet")
 
     # Get environment variables early to validate configuration
-    auth_token = os.environ.get(AUTH_TOKEN_ENV)
-    user_id = os.environ.get(USER_ID_ENV)
-    emp_code = os.environ.get(EMP_CODE_ENV)
+    auth_token = os.environ.get(AUTH_TOKEN_ENV, "")
+    user_id = os.environ.get(USER_ID_ENV, "")
+    emp_code = os.environ.get(EMP_CODE_ENV, "")
 
     # Validate required environment variables
     if not all([auth_token, user_id, emp_code]):
@@ -208,7 +212,7 @@ async def serve() -> None:
         return [
             Tool(
                 name="list_projects",
-                description="Get a list of all available projects for the user",
+                description="Get a list of all available projects for the user in markdown format",
                 inputSchema=ListProjectsInput.model_json_schema(),
             ),
             Tool(
@@ -236,13 +240,19 @@ async def serve() -> None:
                 loop = asyncio.get_running_loop()
                 projects = await loop.run_in_executor(None, service.list_projects)
 
-                # Convert to serializable format
-                serializable_projects = [{"id": p.id, "name": p.name} for p in projects]
+                # Convert to markdown format
+                markdown_output = "# Available Projects\n\n"
+
+                if projects:
+                    for project in projects:
+                        markdown_output += f"- **{project.name}** (ID: {project.id})\n"
+                else:
+                    markdown_output += "No projects found.\n"
 
                 return [
                     TextContent(
                         type="text",
-                        text=json.dumps({"projects": serializable_projects}),
+                        text=markdown_output,
                     )
                 ]
 

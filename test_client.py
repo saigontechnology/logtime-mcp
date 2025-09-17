@@ -9,7 +9,9 @@ Usage:
 
 Example:
     python test_client.py list_projects
-    python test_client.py log_time 10522 8 2025-05-29 1.5 1 "Working on feature X"
+    python test_client.py log_time 10522 8 2025-05-29 2 1 "Working on feature X"
+
+Note: list_projects now returns markdown format instead of JSON.
 """
 
 import os
@@ -49,15 +51,20 @@ async def call_list_projects():
         result = await session.call_tool("list_projects", {})
         
         if result.isError:
-            print("Error:", json.loads(result.content[0].text))
+            # Try to parse as JSON for error, but it might be plain text
+            try:
+                error_content = json.loads(result.content[0].text)
+                print("Error:", error_content)
+            except json.JSONDecodeError:
+                print("Error:", result.content[0].text)
             return 1
         
-        content = json.loads(result.content[0].text)
+        # The content is now in markdown format, not JSON
+        markdown_content = result.content[0].text
         
-        print("\nAvailable Projects:")
-        print("==================")
-        for project in content.get("projects", []):
-            print(f"ID: {project['id']} - {project['name']}")
+        print("\nReceived markdown response:")
+        print("=" * 50)
+        print(markdown_content)
         
         return 0
 
@@ -80,8 +87,8 @@ async def call_log_time(project_id, hours, log_date, hour_rate=1.0, activity=1, 
         tool_args = {
             "projectId": int(project_id),
             "hours": float(hours),
-            "logDate": log_date,
-            "hourRate": float(hour_rate),
+            "logDates": [log_date],  # Changed to list format as expected by the model
+            "hourRate": int(hour_rate),
             "activity": int(activity),
             "comment": comment
         }
@@ -106,7 +113,8 @@ def show_usage():
     print("  python test_client.py log_time PROJECT_ID HOURS LOG_DATE [HOUR_RATE] [ACTIVITY] [COMMENT]")
     print("\nExamples:")
     print("  python test_client.py list_projects")
-    print("  python test_client.py log_time 10522 8 2025-05-29 1.5 1 \"Working on feature X\"")
+    print("  python test_client.py log_time 10522 8 2025-05-29 2 1 \"Working on feature X\"")
+    print("\nNote: list_projects now returns markdown format instead of JSON.")
     sys.exit(1)
 
 async def main():
