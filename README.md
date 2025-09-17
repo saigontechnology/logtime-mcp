@@ -6,6 +6,7 @@ An MCP (Model Context Protocol) server for logging time to the Insider system.
 
 - List all projects available to the user
 - Log time entries to specific projects with various rates and activities
+- List invalid days that don't meet the required 8-hour working time
 
 ## Setup
 
@@ -88,10 +89,9 @@ Logs time to a specific project.
 Parameters:
 
 - `projectId` (required): Project ID from list_projects
-- `hours` (required): Number of hours to log (between 0.5 and 24)
-- `logDate` (required): List of Dates to log time for in YYYY-MM-DD format
-- `hourRate` (optional, default: 1.0): Hour rate (1 for normal, 1.5 for OT
-  weekday, 2 for OT weekend, 3 for OT holiday)
+- `hours` (required): Number of hours to log (between 0.5 and 8)
+- `logDates` (required): List of Dates to log time for in YYYY-MM-DD format
+- `hourRate` (optional, default: 1): Hour rate (1 for normal, 2 for OT weekday, 3 for OT weekend, 4 for OT holiday)
 - `activity` (optional, default: 1): Activity type (1 for Code, 2 for Test)
 - `comment` (optional): Comment for the time entry
 
@@ -107,10 +107,87 @@ Response:
 }
 ```
 
-## Running Tests
+### Tool: list_invalid_days
+
+Lists all invalid days that don't meet the required 8-hour working time for a specific month.
+
+```json
+{
+  "name": "list_invalid_days",
+  "arguments": {
+    "year": 2025,
+    "month": 9
+  }
+}
+```
+
+Parameters:
+
+- `year` (required): Year to check (between 2020 and current year + 1)
+- `month` (required): Month to check (1-12)
+
+Response: Returns a markdown formatted report showing:
+
+- Total number of invalid days
+- For each invalid day:
+  - Date and current logged hours vs expected hours  
+  - Shortfall in hours
+  - Working day status and holiday status
+  - Detailed invalid message
+  - Current log entries with project names and hours
+
+Example output:
+```markdown
+# Invalid Days for 2025-09
+
+**Total Invalid Days:** 2
+
+## 2025-09-03
+- **Current Hours:** 6.0h
+- **Expected Hours:** 8.0h
+- **Shortfall:** 2.0h
+- **Working Day:** Yes
+- **Holiday:** No
+- **Issue:** This is normal working day so there should be exact 8 hours log time with hour rate 1.0 in this day.
+- **Current Log Entries:**
+  - AxiaGram: 6.0h (Working on feature)
+
+## 2025-09-04
+- **Current Hours:** 0.0h
+- **Expected Hours:** 8.0h
+- **Shortfall:** 8.0h
+- **Working Day:** Yes
+- **Holiday:** No
+- **Issue:** This is normal working day so there should be exact 8 hours log time with hour rate 1.0 in this day.
+- **Current Log Entries:** None
+```
+
+## Testing
+
+### Running Unit Tests
 
 ```bash
-python -m unittest discover tests
+uv run python -m unittest tests.timesheet_mcp_test -v
+```
+
+### Manual Testing with Test Client
+
+```bash
+# List projects
+uv run python test_client.py list_projects
+
+# Log time to a project
+uv run python test_client.py log_time 10522 8 2025-09-17 1 1 "Working on new feature"
+
+# List invalid days for a specific month
+uv run python test_client.py list_invalid_days 2025 9
+```
+
+### Manual Logic Testing
+
+```bash
+# Test the filtering logic without hitting the real API
+uv run python manual_test.py
 ```
 
 ## License

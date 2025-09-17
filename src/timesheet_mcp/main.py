@@ -6,7 +6,7 @@ import datetime
 from typing import Dict, List, Optional, Any, Union
 
 import requests
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, field_validator
 from mcp.server import Server
 from mcp.server.stdio import stdio_server
 from mcp.types import Tool, TextContent
@@ -27,6 +27,19 @@ logger = logging.getLogger(__name__)
 # --- Model Definitions ---
 class ListProjectsInput(BaseModel):
     pass  # No input needed for list_projects
+
+
+class ListInvalidDaysInput(BaseModel):
+    year: int = Field(..., description="Year to check (e.g., 2025)")
+    month: int = Field(..., description="Month to check (1-12)", ge=1, le=12)
+
+    @field_validator("year")
+    @classmethod
+    def validate_year(cls, v):
+        current_year = datetime.datetime.now().year
+        if v < 2020 or v > current_year + 1:
+            raise ValueError(f"Year must be between 2020 and {current_year + 1}")
+        return v
 
 
 class LogTimeInput(BaseModel):
@@ -178,6 +191,68 @@ class InsiderAPIService:
                 raise RuntimeError(f"Failed to log time: {error_detail}")
         return {"result": result}
 
+    def list_invalid_days(self, year: int, month: int) -> Dict[str, Any]:
+        """Get list of invalid days (not enough 8h per day) for a specific month"""
+        # Calculate first and last day of the month
+        first_date = datetime.date(year, month, 1)
+        
+        # Calculate last day of the month
+        if month == 12:
+            last_date = datetime.date(year + 1, 1, 1) - datetime.timedelta(days=1)
+        else:
+            last_date = datetime.date(year, month + 1, 1) - datetime.timedelta(days=1)
+        
+        # Format dates as required by API
+        first_date_str = first_date.strftime("%Y-%m-%d")
+        last_date_str = last_date.strftime("%Y-%m-%d")
+        
+        endpoint = f"{self.base_url}/timesheet/{self.emp_code}/timesheetCalendar/{first_date_str}/{last_date_str}"
+        
+        try:
+            response = requests.get(endpoint, headers=self._get_auth_headers())
+            response.raise_for_status()
+            
+            # Parse JSON response
+            calendar_data = response.json()
+            
+            # Filter invalid days
+            invalid_days = []
+            for day_data in calendar_data:
+                if not day_data.get("isValid", True):  # Default to True if isValid field is missing
+                    # Calculate total logged hours for this day
+                    total_hours = sum(log_time.get("hours", 0) for log_time in day_data.get("logTimes", []))
+                    
+                    invalid_day_info = {
+                        "date": day_data["logDate"][:10],  # Extract just the date part (YYYY-MM-DD)
+                        "invalidMessage": day_data.get("invalidMessage", "No message provided"),
+                        "currentLoggedHours": total_hours,
+                        "expectedHours": 8.0,
+                        "shortfall": 8.0 - total_hours,
+                        "isNormalWorkingDay": day_data.get("isNormalWorkingDay", False),
+                        "isPublicHoliday": day_data.get("isPublicHoliday", False),
+                        "logTimes": day_data.get("logTimes", [])
+                    }
+                    invalid_days.append(invalid_day_info)
+            
+            return {
+                "month": f"{year}-{month:02d}",
+                "totalInvalidDays": len(invalid_days),
+                "invalidDays": invalid_days
+            }
+            
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Failed to fetch timesheet calendar: {e}")
+            # Try to get error details if available
+            error_detail = str(e)
+            if hasattr(e, "response") and e.response is not None:
+                try:
+                    error_data = e.response.json()
+                    error_detail = error_data.get("message", str(error_data))
+                except:
+                    error_detail = e.response.text
+            
+            raise RuntimeError(f"Failed to fetch timesheet calendar: {error_detail}")
+
 
 # --- MCP Server Implementation ---
 async def serve() -> None:
@@ -219,6 +294,11 @@ async def serve() -> None:
                 name="log_time_project",
                 description="Log time to a specific project",
                 inputSchema=LogTimeInput.model_json_schema(),
+            ),
+            Tool(
+                name="list_invalid_days",
+                description="List all invalid log days (not enough 8h per day) for a specific month",
+                inputSchema=ListInvalidDaysInput.model_json_schema(),
             ),
         ]
 
@@ -276,6 +356,53 @@ async def serve() -> None:
                                 "details": result,
                             }
                         ),
+                    )
+                ]
+
+            elif name == "list_invalid_days":
+                # Validate input using Pydantic model
+                list_invalid_days_input = ListInvalidDaysInput(**arguments)
+                
+                # Run the potentially blocking API call in an executor
+                loop = asyncio.get_running_loop()
+                result = await loop.run_in_executor(
+                    None, lambda: service.list_invalid_days(
+                        list_invalid_days_input.year, 
+                        list_invalid_days_input.month
+                    )
+                )
+                
+                # Format output as readable text
+                output_text = f"# Invalid Days for {result['month']}\n\n"
+                output_text += f"**Total Invalid Days:** {result['totalInvalidDays']}\n\n"
+                
+                if result['invalidDays']:
+                    for day in result['invalidDays']:
+                        output_text += f"## {day['date']}\n"
+                        output_text += f"- **Current Hours:** {day['currentLoggedHours']:.1f}h\n"
+                        output_text += f"- **Expected Hours:** {day['expectedHours']:.1f}h\n"
+                        output_text += f"- **Shortfall:** {day['shortfall']:.1f}h\n"
+                        output_text += f"- **Working Day:** {'Yes' if day['isNormalWorkingDay'] else 'No'}\n"
+                        output_text += f"- **Holiday:** {'Yes' if day['isPublicHoliday'] else 'No'}\n"
+                        output_text += f"- **Issue:** {day['invalidMessage']}\n"
+                        
+                        if day['logTimes']:
+                            output_text += f"- **Current Log Entries:**\n"
+                            for log_entry in day['logTimes']:
+                                project_name = log_entry.get('projectName', 'Unknown Project')
+                                hours = log_entry.get('hours', 0)
+                                comment = log_entry.get('comment', 'No comment')
+                                output_text += f"  - {project_name}: {hours}h ({comment})\n"
+                        else:
+                            output_text += f"- **Current Log Entries:** None\n"
+                        output_text += "\n"
+                else:
+                    output_text += "No invalid days found for this month! 🎉\n"
+                
+                return [
+                    TextContent(
+                        type="text",
+                        text=output_text,
                     )
                 ]
 
